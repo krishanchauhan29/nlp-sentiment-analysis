@@ -57,12 +57,24 @@ if analyze_btn and user_input:
         truncated = ' '.join(user_input.split()[:512])
         raw_results = model(truncated)
         
-        # raw_results is [[{label, score}, ...]]
-        results = raw_results[0] if isinstance(raw_results[0], list) else raw_results
+        # Flatten properly
+        if isinstance(raw_results, list) and isinstance(raw_results[0], list):
+            results = raw_results[0]
+        elif isinstance(raw_results, list) and isinstance(raw_results[0], dict):
+            results = raw_results
+        else:
+            results = raw_results
 
-        scores = {}
+        # Build scores dict
+        scores = {'positive': 0.0, 'negative': 0.0, 'neutral': 0.0}
         for r in results:
-            scores[r['label']] = round(float(r['score']) * 100, 2)
+            label = r['label'].lower()
+            scores[label] = round(float(r['score']) * 100, 2)
+        
+        # Normalize to 100%
+        total = sum(scores.values())
+        if total > 0:
+            scores = {k: round(v / total * 100, 2) for k, v in scores.items()}
 
         best_label = max(scores, key=scores.get)
         confidence = scores[best_label]
