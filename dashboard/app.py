@@ -61,7 +61,10 @@ if analyze_btn and user_input:
         results = model(truncated, return_all_scores=True)
         if isinstance(results[0], list):
             results = results[0]
-        scores = {r['label']: round(r['score'] * 100, 2) for r in results}
+        scores = {}
+        for r in results:
+            scores[r['label']] = round(float(r['score']) * 100, 2)
+        print("Scores:", scores)
         best = max(results, key=lambda x: x['score'])
 
     st.markdown("---")
@@ -86,11 +89,11 @@ if analyze_btn and user_input:
     def gauge(value, title, color):
         fig = go.Figure(go.Indicator(
             mode="gauge+number",
-            value=value,
+            value=float(value),
             title={'text': title, 'font': {'size': 16}},
             number={'suffix': '%', 'font': {'size': 24}},
             gauge={
-                'axis': {'range': [0, 100]},
+                'axis': {'range': [0.0, 100.0]},
                 'bar': {'color': color},
                 'steps': [
                     {'range': [0, 30], 'color': '#f0f0f0'},
