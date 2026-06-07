@@ -1,35 +1,71 @@
 import streamlit as st
-from transformers import pipeline
 import plotly.graph_objects as go
+from transformers import pipeline
+import re
 
-st.set_page_config(
-    page_title="NLP Sentiment Analyzer",
-    page_icon="🧠",
-    layout="wide"
-)
+st.set_page_config(page_title="NLP Sentiment Analyzer", page_icon="🧠", layout="wide")
 
 @st.cache_resource
 def load_model():
     return pipeline(
         "text-classification",
         model="cardiffnlp/twitter-roberta-base-sentiment-latest",
-        return_all_scores=True
+        top_k=None
     )
 
 model = load_model()
 
-st.title("🧠 NLP Sentiment Analysis")
-st.markdown("**Multi-class sentiment analyzer powered by RoBERTa transformer model**")
+def split_sentences(text):
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    return [s.strip() for s in sentences if len(s.strip()) > 10]
+
+def analyze_text(text):
+    sentences = split_sentences(text)
+    if not sentences:
+        sentences = [text]
+    
+    all_scores = {'positive': [], 'negative': [], 'neutral': []}
+    sentence_results = []
+    
+    for sentence in sentences:
+        result = model(sentence[:512])[0]
+        s = {'positive': 0.0, 'negative': 0.0, 'neutral': 0.0}
+        for r in result:
+            label = r['label'].lower()
+            if label in s:
+                s[label] = round(float(r['score']) * 100, 2)
+        
+        all_scores['positive'].append(s['positive'])
+        all_scores['negative'].append(s['negative'])
+        all_scores['neutral'].append(s['neutral'])
+        sentence_results.append({'sentence': sentence, **s})
+    
+    # Average scores
+    avg = {
+        'positive': round(sum(all_scores['positive']) / len(all_scores['positive']), 2),
+        'negative': round(sum(all_scores['negative']) / len(all_scores['negative']), 2),
+        'neutral': round(sum(all_scores['neutral']) / len(all_scores['neutral']), 2)
+    }
+    
+    # Normalize to 100%
+    total = sum(avg.values())
+    avg = {k: round(v / total * 100, 2) for k, v in avg.items()}
+    
+    best_label = max(avg, key=avg.get)
+    return avg, best_label, sentence_results
+
+# UI
+st.title("🧠 NLP Sentiment Analyzer")
+st.markdown("**Sentence-level multi-class sentiment analysis — Positive / Negative / Neutral**")
 st.markdown("---")
 
 col1, col2 = st.columns([2, 1])
-
 with col1:
     st.subheader("📝 Enter Text")
     user_input = st.text_area(
-        "Paste your text here (up to 1000 words)",
+        "Paste your paragraph here (up to 1000 words)",
         height=200,
-        placeholder="Type or paste any review, comment, feedback, or paragraph here..."
+        placeholder="Type or paste any review, feedback, or paragraph here..."
     )
     word_count = len(user_input.split()) if user_input else 0
     st.caption(f"Word count: {word_count}/1000")
@@ -40,57 +76,32 @@ with col2:
     st.info("""
     **Model:** RoBERTa (Cardiff NLP)
     
+    **How it works:**
+    - Splits text into sentences
+    - Analyzes each sentence
+    - Averages scores for final result
+    
     **Classes:**
     - 🟢 Positive
-    - 🔴 Negative  
+    - 🔴 Negative
     - 🟡 Neutral
-    
-    **Use cases:**
-    - Product reviews
-    - Customer feedback
-    - Social media posts
-    - Survey responses
     """)
 
 if analyze_btn and user_input:
-    with st.spinner("Analyzing sentiment..."):
-        truncated = ' '.join(user_input.split()[:512])
-        raw_results = model(truncated)
-        
-        # Flatten properly
-        if isinstance(raw_results, list) and isinstance(raw_results[0], list):
-            results = raw_results[0]
-        elif isinstance(raw_results, list) and isinstance(raw_results[0], dict):
-            results = raw_results
-        else:
-            results = raw_results
-
-        # Build scores dict
-        scores = {'positive': 0.0, 'negative': 0.0, 'neutral': 0.0}
-        for r in results:
-            label = r['label'].lower()
-            scores[label] = round(float(r['score']) * 100, 2)
-        
-        # Normalize to 100%
-        total = sum(scores.values())
-        if total > 0:
-            scores = {k: round(v / total * 100, 2) for k, v in scores.items()}
-
-        best_label = max(scores, key=scores.get)
-        confidence = scores[best_label]
+    with st.spinner("Analyzing sentence by sentence..."):
+        scores, best_label, sentence_results = analyze_text(user_input)
 
     st.markdown("---")
-    st.subheader("📊 Analysis Results")
+    st.subheader("📊 Overall Sentiment")
 
     if best_label == 'positive':
-        st.success(f"### ✅ POSITIVE — {confidence}% Confidence")
+        st.success(f"### ✅ POSITIVE — {scores['positive']}% Confidence")
     elif best_label == 'negative':
-        st.error(f"### ❌ NEGATIVE — {confidence}% Confidence")
+        st.error(f"### ❌ NEGATIVE — {scores['negative']}% Confidence")
     else:
-        st.warning(f"### 😐 NEUTRAL — {confidence}% Confidence")
+        st.warning(f"### 😐 NEUTRAL — {scores['neutral']}% Confidence")
 
-    st.markdown("---")
-
+    # Gauge meters
     def gauge(value, title, color):
         fig = go.Figure(go.Indicator(
             mode="gauge+number",
@@ -98,18 +109,13 @@ if analyze_btn and user_input:
             title={'text': title, 'font': {'size': 16}},
             number={'suffix': '%', 'font': {'size': 24}},
             gauge={
-                'axis': {'range': [0.0, 100.0], 'tickwidth': 1},
+                'axis': {'range': [0.0, 100.0]},
                 'bar': {'color': color},
                 'steps': [
                     {'range': [0, 30], 'color': '#f5f5f5'},
                     {'range': [30, 70], 'color': '#eeeeee'},
                     {'range': [70, 100], 'color': '#e0e0e0'}
-                ],
-                'threshold': {
-                    'line': {'color': color, 'width': 4},
-                    'thickness': 0.75,
-                    'value': float(value)
-                }
+                ]
             }
         ))
         fig.update_layout(height=250, margin=dict(t=50, b=0, l=20, r=20))
@@ -117,24 +123,35 @@ if analyze_btn and user_input:
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.plotly_chart(gauge(scores.get('positive', 0.0), '🟢 Positive', '#43A047'),
+        st.plotly_chart(gauge(scores['positive'], '🟢 Positive', '#43A047'),
                         use_container_width=True)
     with col2:
-        st.plotly_chart(gauge(scores.get('negative', 0.0), '🔴 Negative', '#E53935'),
+        st.plotly_chart(gauge(scores['negative'], '🔴 Negative', '#E53935'),
                         use_container_width=True)
     with col3:
-        st.plotly_chart(gauge(scores.get('neutral', 0.0), '🟡 Neutral', '#FF9800'),
+        st.plotly_chart(gauge(scores['neutral'], '🟡 Neutral', '#FF9800'),
                         use_container_width=True)
 
+    # Detailed scores
     st.markdown("---")
     st.subheader("📋 Detailed Scores")
     col1, col2, col3 = st.columns(3)
-    col1.metric("🟢 Positive", f"{scores.get('positive', 0.0)}%")
-    col2.metric("🔴 Negative", f"{scores.get('negative', 0.0)}%")
-    col3.metric("🟡 Neutral", f"{scores.get('neutral', 0.0)}%")
+    col1.metric("🟢 Positive", f"{scores['positive']}%")
+    col2.metric("🔴 Negative", f"{scores['negative']}%")
+    col3.metric("🟡 Neutral", f"{scores['neutral']}%")
+
+    # Sentence level breakdown
+    st.markdown("---")
+    st.subheader("🔍 Sentence-by-Sentence Breakdown")
+    for i, s in enumerate(sentence_results):
+        with st.expander(f"Sentence {i+1}: {s['sentence'][:60]}..."):
+            c1, c2, c3 = st.columns(3)
+            c1.metric("🟢 Positive", f"{s['positive']}%")
+            c2.metric("🔴 Negative", f"{s['negative']}%")
+            c3.metric("🟡 Neutral", f"{s['neutral']}%")
 
 elif analyze_btn and not user_input:
-    st.warning("⚠️ Please enter some text to analyze!")
+    st.warning("⚠️ Please enter some text!")
 
 st.markdown("---")
 st.caption("Built by Krishan Kumar Chauhan | M.Tech Data Science, GBU | Powered by HuggingFace RoBERTa")
