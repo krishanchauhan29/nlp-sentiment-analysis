@@ -85,6 +85,14 @@ with col2:
     - 🟢 Positive
     - 🔴 Negative
     - 🟡 Neutral
+    
+    **Use Cases:**
+    - 📦 Product reviews
+    - 💬 Customer feedback
+    - 📱 Social media posts
+    - 📋 Survey responses
+    - 📰 News articles
+    - 📧 Email sentiment
     """)
 
 if analyze_btn and user_input:
