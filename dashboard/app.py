@@ -58,7 +58,9 @@ if analyze_btn and user_input:
     with st.spinner("Analyzing sentiment..."):
         # Truncate to 512 tokens
         truncated = ' '.join(user_input.split()[:512])
-        results = model(truncated, return_all_scores=True)[0]
+        results = model(truncated, return_all_scores=True)
+        if isinstance(results[0], list):
+            results = results[0]
         scores = {r['label']: round(r['score'] * 100, 2) for r in results}
         best = max(results, key=lambda x: x['score'])
 
